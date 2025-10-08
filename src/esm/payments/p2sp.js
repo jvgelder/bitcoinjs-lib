@@ -71,10 +71,9 @@ export const findSmallestOutpoint = inputs =>
  */
 export const serOutpointLE = (txidHexBE, vout) => {
   const out = new Uint8Array(36);
-  const txidLE = tools.fromHex(txidHexBE);
-  if (txidLE.length !== 32) throw new Error('txid must be 32 bytes');
-  txidLE.reverse(); // BE -> LE
-  out.set(txidLE, 0);
+  if (txidHexBE.length !== 32) throw new Error('txid must be 32 bytes');
+  txidHexBE.reverse(); // BE -> LE
+  out.set(txidHexBE, 0);
   writeUInt32(out, 32, vout >>> 0, 'le');
   return out;
 };
@@ -273,8 +272,7 @@ export function calculateSharedSecret(
     throw new Error('summedSenderPrivkey was not provided?');
   const Si = ecc.pointMultiply(scanPubkey, inputHash, true);
   if (!Si) throw new Error('pointMultiply(B_scan, ih) failed');
-  let S;
-  S = ecc.pointMultiply(Si, summedSenderPrivkey, true);
+  const S = ecc.pointMultiply(Si, summedSenderPrivkey, true);
   if (!S) throw new Error('pointMultiply(Si, summedSenderPrivkey) failed');
   else return S;
 }
@@ -287,8 +285,7 @@ export function calculateSharedSecret(
  * @returns input_hash tweak
  */
 export function calculateT_k(S, k) {
-  if (!S) return null;
-  let t_k = taggedHash('BIP0352/SharedSecret', tools.concat([S, ser32BE(k)]));
+  const t_k = taggedHash('BIP0352/SharedSecret', tools.concat([S, ser32BE(k)]));
   return hashToTweak(t_k);
 }
 /**
@@ -313,6 +310,7 @@ export function calculateP_k(spendPubKey, t_k) {
 export function deriveOutput(S, spendPubkey, k) {
   // t_k = H_tag(SharedSecret, ser_P(S) || ser32BE(k))  -> reduce mod n
   const t_k = calculateT_k(S, k);
+  if (!t_k) throw new Error('t_k: failed');
   // P_k = B_spend + t_k·G (compressed) -> x-only for P2TR
   const P_k = calculateP_k(spendPubkey, t_k);
   const P_xOnly = toXOnly(P_k);
@@ -355,7 +353,6 @@ export function generateLabelAndAddress(B_scan, B_spend, label) {
  * Scans a transaction's inputs and outputs to find any silent payments for the receiver.
  * @param receiverScanPrivkey - b_scan
  * @param receiverSpendPrivkey - b_spend
- * @param smallestOutpoint
  * @param inputHashTweak
  * @param summedSenderPubkey - A_sum
  * @param outputsToCheck - array of hex xOnly encoded outputs to check
@@ -364,7 +361,6 @@ export function generateLabelAndAddress(B_scan, B_spend, label) {
 export function scanForSilentPayments(
   receiverScanPrivkey,
   receiverSpendPrivkey,
-  smallestOutpoint,
   inputHashTweak,
   summedSenderPubkey,
   outputsToCheck,

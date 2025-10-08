@@ -8,7 +8,6 @@ import { bech32m } from 'bech32';
 // Explicitly import the Payment type for clarity
 import { Payment, PaymentOpts } from './index';
 import * as lazy from './lazy';
-import * as payments from './index.ts';
 import { taggedHash } from '../crypto';
 import { Input } from '../transaction';
 
@@ -90,12 +89,11 @@ export const findSmallestOutpoint = (inputs: Array<Input>) =>
  * @param vout - output index
  * @returns the serialized little endian encoded output
  */
-export const serOutpointLE = (txidHexBE: string, vout: number) => {
+export const serOutpointLE = (txidHexBE: Uint8Array, vout: number) => {
   const out = new Uint8Array(36);
-  const txidLE = tools.fromHex(txidHexBE);
-  if (txidLE.length !== 32) throw new Error('txid must be 32 bytes');
-  txidLE.reverse(); // BE -> LE
-  out.set(txidLE, 0);
+  if (txidHexBE.length !== 32) throw new Error('txid must be 32 bytes');
+  txidHexBE.reverse(); // BE -> LE
+  out.set(txidHexBE, 0);
   writeUInt32(out, 32, vout >>> 0, 'le');
   return out;
 };
@@ -395,9 +393,10 @@ export function deriveOutput(
   S: Uint8Array,
   spendPubkey: Uint8Array,
   k: number,
-): { pub_key: Uint8Array; tweak_key } {
+): { pub_key: Uint8Array; tweak_key: Uint8Array } {
   // t_k = H_tag(SharedSecret, ser_P(S) || ser32BE(k))  -> reduce mod n
   const t_k: Uint8Array<ArrayBufferLike> | null = calculateT_k(S, k);
+  if (!t_k) throw new Error('t_k: failed');
 
   // P_k = B_spend + t_k·G (compressed) -> x-only for P2TR
   const P_k: Uint8Array<ArrayBufferLike> = calculateP_k(spendPubkey, t_k);
@@ -453,7 +452,6 @@ export function generateLabelAndAddress(
  * Scans a transaction's inputs and outputs to find any silent payments for the receiver.
  * @param receiverScanPrivkey - b_scan
  * @param receiverSpendPrivkey - b_spend
- * @param smallestOutpoint
  * @param inputHashTweak
  * @param summedSenderPubkey - A_sum
  * @param outputsToCheck - array of hex xOnly encoded outputs to check
@@ -462,20 +460,19 @@ export function generateLabelAndAddress(
 export function scanForSilentPayments(
   receiverScanPrivkey: Uint8Array,
   receiverSpendPrivkey: Uint8Array,
-  smallestOutpoint: Uint8Array,
   inputHashTweak: Uint8Array,
   summedSenderPubkey: Uint8Array,
   outputsToCheck: Set<string>,
-  labelNonces: Array<Uint8Array> = Array.from([]),
+  labelNonces: Array<number> = Array.from([]),
 ): {
   priv_key_tweak: Uint8Array;
   pub_key: Uint8Array;
-  labelNonce?: Uint8Array;
+  labelNonce?: number;
 }[] {
   let foundPayments: {
     priv_key_tweak: Uint8Array;
     pub_key: Uint8Array;
-    labelNonce?: Uint8Array;
+    labelNonce?: number;
   }[] = [];
 
   // G
@@ -529,7 +526,7 @@ function performScan(
   outputsToCheck: Set<string>,
   labelScalar: Uint8Array | null, // L (or null for base)
 ): { priv_key_tweak: Uint8Array; pub_key: Uint8Array }[] {
-  const found: { payment: Payment; t: Uint8Array; P_xonly: Uint8Array }[] = [];
+  const found: { priv_key_tweak: Uint8Array; pub_key: Uint8Array }[] = [];
 
   for (let k = 0; k < outputsToCheck.size; k++) {
     const derivedOutput = deriveOutput(S, receiverSpendPubkey, k);

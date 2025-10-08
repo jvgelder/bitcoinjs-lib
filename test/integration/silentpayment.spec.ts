@@ -14,7 +14,6 @@ import {
   encodeSilentPaymentAddress,
   findSmallestOutpoint,
   modN32,
-  generateLabelAndAddress,
   scanForSilentPayments,
 } from '../../ts_src/payments/p2sp.js';
 import { Input } from '../../ts_src/transaction.js';
@@ -35,7 +34,7 @@ interface TestInput {
   txinwitness: string;
   prevout: {
     scriptPubKey: {
-      hex: String;
+      hex: string;
     };
   };
   private_key?: string;
@@ -82,7 +81,7 @@ interface Recipient {
 interface RecipientOutput {
   priv_key_tweak: string;
   pub_key: string;
-  signature: String;
+  signature: string;
 }
 
 // ================================================================
@@ -315,7 +314,7 @@ function runSenderCase(tc: Sender) {
 
   // -------- 2) a_sum with Taproot-only odd-Y conditional negation --------
   // 2) a_sum = Σ negated (mod n) via tiny-secp
-  let aSum: Uint8Array = calculateSumA(inputPrivKeyTuples);
+  const aSum: Uint8Array = calculateSumA(inputPrivKeyTuples);
 
   // (optional) fixture check stays the same
   if (expected.input_private_key_sum) {
@@ -446,7 +445,6 @@ function runReceiverCase(tc: Recipient) {
   const foundScanned = scanForSilentPayments(
     b_scan,
     b_spend,
-    outpointL,
     inputHashTweak,
     A_sum_point,
     outputsToCheck,
