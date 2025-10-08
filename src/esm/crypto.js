@@ -35,6 +35,9 @@ export const TAGS = [
   'TapTweak',
   'KeyAgg list',
   'KeyAgg coefficient',
+  'BIP0352/Inputs',
+  'BIP0352/SharedSecret',
+  'BIP0352/Label',
 ];
 /**
  * A collection of tagged hash prefixes used in various BIP (Bitcoin Improvement Proposals)

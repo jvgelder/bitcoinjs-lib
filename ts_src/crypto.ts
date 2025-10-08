@@ -38,6 +38,9 @@ export const TAGS = [
   'TapTweak',
   'KeyAgg list',
   'KeyAgg coefficient',
+  'BIP0352/Inputs',
+  'BIP0352/SharedSecret',
+  'BIP0352/Label',
 ] as const;
 export type TaggedHashPrefix = (typeof TAGS)[number];
 type TaggedHashPrefixes = {
