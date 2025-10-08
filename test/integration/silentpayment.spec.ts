@@ -84,18 +84,6 @@ interface RecipientOutput {
   signature: string;
 }
 
-// ================================================================
-// ===================   scalar helpers (mod n)  ==================
-// ================================================================
-const N = fromHex(
-  'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141',
-);
-
-function isZero32(a: Uint8Array) {
-  for (let i = 0; i < 32; i++) if (a[i] !== 0) return false;
-  return true;
-}
-
 // Detect patterns
 function isP2PKH(spkHex?: string): boolean {
   const u = fromHex(spkHex || '');
@@ -165,24 +153,6 @@ function parseWitnessItems(witHex: string): Uint8Array[] {
     off += L.val;
   }
   return items;
-}
-
-// ---- helper: sum compressed pubkeys exactly as given (33B) ----
-function sumPointsCompressed(points33: Uint8Array[]): Uint8Array {
-  let acc: Uint8Array | null = null;
-  for (const P of points33) {
-    if (!P || P.length !== 33 || (P[0] !== 0x02 && P[0] !== 0x03)) {
-      throw new Error('bad compressed pubkey in input_pub_keys');
-    }
-    if (acc === null) acc = P;
-    else {
-      const next = ecc.pointAdd(acc, P, true) as Uint8Array | null;
-      if (!next) throw new Error('pointAdd failed when summing inputs');
-      acc = next;
-    }
-  }
-  if (!acc) throw new Error('no input_pub_keys to sum');
-  return acc; // 33B compressed A_sum
 }
 
 /**
