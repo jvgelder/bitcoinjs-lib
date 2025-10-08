@@ -3,7 +3,7 @@ import assert from 'assert';
 import * as ecc from 'tiny-secp256k1';
 import * as bitcoin from 'bitcoinjs-lib';
 import { fromHex, toHex } from 'uint8array-tools';
-import * as fixtures from '../fixtures/p2sp.json';
+import fixtures from '../fixtures/p2sp.json';
 import { hash160 } from '../../ts_src/crypto.js';
 import {
   calculateInputHashTweak,
@@ -487,11 +487,8 @@ function runReceiverCase(tc: Recipient) {
     assert.ok(scannedResult.has(x), `receiver: missing expected entry ${x}`);
 }
 
-// ================================================================
-// =======================  mocha suite  ==========================
-// ================================================================
 describe('BIP-352 Silent Payments — sender vectors', () => {
-  const groups: TestCase[] = fixtures as TestCase[];
+  const groups: TestCase[] = fixtures;
   let count = 0;
   for (const g of groups) {
     if (!g?.sending) continue;
@@ -535,7 +532,7 @@ describe('BIP-352 Silent Payments — sender vectors', () => {
 });
 
 describe('BIP-352 Silent Payments — receiver vectors', () => {
-  const groups: TestCase[] = fixtures as TestCase[];
+  const groups : TestCase[]= fixtures;
   let count = 0;
   for (const g of groups) {
     if (!g?.receiving) continue;
