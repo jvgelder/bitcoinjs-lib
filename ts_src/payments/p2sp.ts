@@ -9,16 +9,185 @@ import { bech32m } from 'bech32';
 import { Payment, PaymentOpts } from './index';
 import * as lazy from './lazy';
 import { taggedHash } from '../crypto';
-import { Input } from '../transaction';
+import { Input, Output } from '../transaction';
 
 // --- TYPE DEFINITIONS & UTILITIES ---
 export const BECH32_SP_LIMIT = 150;
 
-// Extend the Payment interface for silent payments
+/**
+ * @property {Uint8Array} [S] - Shared secret between you and recipient
+ * @property {Uint8Array} [B_spend_pub] - Recipients spend pubkey B_scan
+ */
+interface Recipient {
+  S?: Uint8Array;
+  B_spend_pub?: Uint8Array;
+}
+/**
+ * Represents a Silent Payment transaction structure that extends a standard {@link Payment}.
+ * Includes additional cryptographic and metadata fields used for constructing
+ * or parsing silent payments.
+ *
+ * @property {Uint8Array} [spendPubkey] - Optional spend public key for the sender.
+ * @property {Uint8Array} [scanPubkey] - Optional scan public key used for recipient address derivation.
+ * @property {Input[]} [inputs] - Optional array of input UTXOs used in the transaction.
+ * @property {Output[]} [outputs] - Optional array of outputs generated in the transaction.
+ * @property {number} [version] - Optional version number of the silent payment scheme.
+ * @property {Uint8Array} [aSum] - Optional summed private key (see `calculateSumA`).
+ * @property {Uint8Array} [outpointL] - Optional first result of lexicographically sorted input transaction IDs.
+ * @property {{ priv: Uint8Array; isXOnly: boolean }[]} [privKeys] - Optional array of private keys associated with the transaction.
+ * Each object includes the private key and a flag indicating if it's x-only.
+ * @property {Recipient[]} recipients - Array of recipients for this silent payment.
+ */
 export interface SilentPayment extends Payment {
   spendPubkey?: Uint8Array;
   scanPubkey?: Uint8Array;
+  inputs?: Input[];
+  outputs?: Output[];
   version?: number;
+  aSum?: Uint8Array;
+  outpointL?: Uint8Array;
+  privKeys?: Array<{ priv: Uint8Array; isXOnly: boolean }>;
+  recipients: Array<Recipient>;
+}
+
+/**
+ * Main function for creating a Pay-to-Silent-Payment (P2SP) payment object.
+ * This function encapsulates the logic for handling silent payment addresses and keys.
+ *
+ * @param a - The payment object containing the necessary data for P2SP.
+ * @param opts - Optional payment options.
+ * @returns The P2SP payment object.
+ */
+export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
+  if (!a.address && !(a.spendPubkey && a.scanPubkey)) {
+    throw new TypeError('Not enough data');
+  }
+  opts = Object.assign({ validate: true }, opts || {});
+
+  const network = a.network || BITCOIN_NETWORK;
+  const o: SilentPayment = { name: 'p2sp', network };
+
+  // Lazy load silent payment specific properties
+  lazy.prop(o, 'spendPubkey', () => {
+    if (a.address) return decodeSilentPaymentAddress(a.address).B_spend;
+    return a.spendPubkey!;
+  });
+  lazy.prop(o, 'scanPubkey', () => {
+    if (a.address) return decodeSilentPaymentAddress(a.address).B_scan;
+    return a.scanPubkey!;
+  });
+  lazy.prop(o, 'address', () => {
+    if (a.address) return a.address;
+    const version = a.version !== undefined ? a.version : 0;
+    return encodeSilentPaymentAddress(
+      o.spendPubkey!,
+      o.scanPubkey!,
+      version,
+      network,
+    );
+  });
+  lazy.prop(o, 'outputs', () => {
+    if (a.outputs) return a.outputs;
+    const allRecipientsComplete = a.recipients.every(
+      r => r.S.length > 0 && r.B_spend_pub.length > 0,
+    );
+    const allRecipientsHaveBSpend = a.recipients.every(
+      r => r.B_spend_pub.length > 0,
+    );
+    // If we have both the secret and B_spend for each key we can derive directly
+    if (allRecipientsComplete) {
+      return a.recipients?.map((value, index) => {
+        deriveOutput(value.S, value.B_spend_pub, index);
+      });
+    }
+    // If we have outpointL, aSum and only the spend keys for the recipients we need to calculate the input hash and secret
+    else if (
+      a.outpointL != null &&
+      a.outpointL?.length > 0 &&
+      a.aSum != null &&
+      a.aSum?.length > 0 &&
+      a.recipients?.length > 0 &&
+      allRecipientsHaveBSpend
+    ) {
+      const A: Uint8Array = ecc.pointFromScalar(a.aSum, true); // compressed 33B
+      const inputHashTweak: Uint8Array = calculateInputHashTweak(
+        a.outpointL,
+        A,
+      );
+      return a.recipients?.map((value, index) => {
+        const S = calculateSharedSecret(
+          inputHashTweak,
+          value.B_spend_pub,
+          aSum,
+        );
+        deriveOutput(S, value.B_spend_pub, index);
+      });
+    }
+    // If we have all the inputs, aSum and only the spend keys for the recipients we need to calculate the input hash and secret
+    else if (
+      a.inputs != null &&
+      a.inputs?.length > 0 &&
+      a.aSum != null &&
+      a.aSum?.length > 0 &&
+      a?.recipients.length > 0 &&
+      allRecipientsHaveBSpend
+    ) {
+      const outpointL = findSmallestOutpoint(a.inputs);
+      const A: Uint8Array = ecc.pointFromScalar(a.aSum, true); // compressed 33B
+      const inputHashTweak: Uint8Array = calculateInputHashTweak(outpointL, A);
+      return a?.recipients.map((value, index) => {
+        const S = calculateSharedSecret(
+          inputHashTweak,
+          value.B_spend_pub,
+          a.aSum,
+        );
+        deriveOutput(S, value.B_spend_pub, index);
+      });
+    }
+    // If we have all the inputs, privKeys and only the spend keys for the recipients we need to calculate the Sum, the input hash and secret
+    else if (
+      a.inputs != null &&
+      a.inputs?.length > 0 &&
+      a.privKeys != null &&
+      a.privKeys?.length > 0 &&
+      a?.recipients.length > 0 &&
+      allRecipientsHaveBSpend
+    ) {
+      const aSum: Uint8Array = calculateSumA(a.privKeys);
+      const outpointL = findSmallestOutpoint(a.inputs);
+      const A: Uint8Array = ecc.pointFromScalar(aSum, true); // compressed 33B
+      const inputHashTweak: Uint8Array = calculateInputHashTweak(outpointL, A);
+      return a?.recipients.map((value, index) => {
+        const S = calculateSharedSecret(
+          inputHashTweak,
+          value.B_spend_pub,
+          aSum,
+        );
+        deriveOutput(S, value.B_spend_pub, index);
+      });
+    } else throw Error('Not enough data to derive outputs');
+  });
+
+  if (opts.validate) {
+    if (a.address) {
+      const decoded = decodeSilentPaymentAddress(a.address);
+      if (a.spendPubkey && tools.compare(a.spendPubkey, decoded.B_spend) !== 0)
+        throw new TypeError('Spend pubkey mismatch');
+      if (a.scanPubkey && tools.compare(a.scanPubkey, decoded.B_scan) !== 0)
+        throw new TypeError('Scan pubkey mismatch');
+
+      const HRP = network.bech32 === 'bc' ? 'sp' : 'tsp';
+      if (!a.address.startsWith(HRP)) {
+        throw new TypeError('Invalid prefix or Network mismatch');
+      }
+    }
+    if (o.spendPubkey && o.spendPubkey.length !== 33)
+      throw new TypeError('Invalid spend pubkey length');
+    if (o.scanPubkey && o.scanPubkey.length !== 33)
+      throw new TypeError('Invalid scan pubkey length');
+  }
+
+  return Object.assign(o, a);
 }
 
 /**
@@ -148,8 +317,8 @@ export function encodeSilentPaymentAddress(
  * @returns { B_spend, B_scan, version }
  */
 export function decodeSilentPaymentAddress(address: string): {
-  B_spend: Uint8Array;
-  B_scan: Uint8Array;
+  B_spend: Uint8Array; // pub spend key
+  B_scan: Uint8Array; // pub scan key
   version: number;
 } {
   // The default bech32 limit is 90, but silent payment addresses are longer.
@@ -198,65 +367,6 @@ export function decodeSilentPaymentAddress(address: string): {
   }
 
   return { B_spend, B_scan, version };
-}
-
-/**
- * Main function for creating a Pay-to-Silent-Payment (P2SP) payment object.
- * This function encapsulates the logic for handling silent payment addresses and keys.
- *
- * @param a - The payment object containing the necessary data for P2SP.
- * @param opts - Optional payment options.
- * @returns The P2SP payment object.
- */
-export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
-  if (!a.address && !(a.spendPubkey && a.scanPubkey)) {
-    throw new TypeError('Not enough data');
-  }
-  opts = Object.assign({ validate: true }, opts || {});
-
-  const network = a.network || BITCOIN_NETWORK;
-  const o: SilentPayment = { name: 'p2sp', network };
-
-  // Lazy load silent payment specific properties
-  lazy.prop(o, 'spendPubkey', () => {
-    if (a.address) return decodeSilentPaymentAddress(a.address).B_spend;
-    return a.spendPubkey!;
-  });
-  lazy.prop(o, 'scanPubkey', () => {
-    if (a.address) return decodeSilentPaymentAddress(a.address).B_scan;
-    return a.scanPubkey!;
-  });
-  lazy.prop(o, 'address', () => {
-    if (a.address) return a.address;
-    const version = a.version !== undefined ? a.version : 0;
-    return encodeSilentPaymentAddress(
-      o.spendPubkey!,
-      o.scanPubkey!,
-      version,
-      network,
-    );
-  });
-
-  if (opts.validate) {
-    if (a.address) {
-      const decoded = decodeSilentPaymentAddress(a.address);
-      if (a.spendPubkey && tools.compare(a.spendPubkey, decoded.B_spend) !== 0)
-        throw new TypeError('Spend pubkey mismatch');
-      if (a.scanPubkey && tools.compare(a.scanPubkey, decoded.B_scan) !== 0)
-        throw new TypeError('Scan pubkey mismatch');
-
-      const HRP = network.bech32 === 'bc' ? 'sp' : 'tsp';
-      if (!a.address.startsWith(HRP)) {
-        throw new TypeError('Invalid prefix or Network mismatch');
-      }
-    }
-    if (o.spendPubkey && o.spendPubkey.length !== 33)
-      throw new TypeError('Invalid spend pubkey length');
-    if (o.scanPubkey && o.scanPubkey.length !== 33)
-      throw new TypeError('Invalid scan pubkey length');
-  }
-
-  return Object.assign(o, a);
 }
 
 /** Calculate Input hash tweak
