@@ -201,44 +201,9 @@ export function ser32BE(n: number): Uint8Array {
   return b;
 }
 
-const N = tools.fromHex(
-  'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141',
-);
-
 function isZero32(a: Uint8Array) {
   for (let i = 0; i < 32; i++) if (a[i] !== 0) return false;
   return true;
-}
-
-//TODO I guess there already is a function for this ?
-function subBE(a: Uint8Array, b: Uint8Array) {
-  const o = new Uint8Array(32);
-  let c = 0;
-  for (let i = 31; i >= 0; i--) {
-    let v = a[i] - b[i] - c;
-    if (v < 0) {
-      v += 256;
-      c = 1;
-    } else c = 0;
-    o[i] = v;
-  }
-  return o;
-}
-
-//TODO I guess there already is a function for this ?
-function modN32(x: Uint8Array) {
-  let r = new Uint8Array(x);
-  while (tools.compare(r, N) >= 0) r = subBE(r, N);
-  return r;
-}
-
-function hashToTweak(h: Uint8Array) {
-  let t = modN32(h);
-  if (isZero32(t)) {
-    t = new Uint8Array(32);
-    t[31] = 1;
-  }
-  return t;
 }
 
 /**
@@ -370,20 +335,40 @@ export function decodeSilentPaymentAddress(address: string): {
 }
 
 /** Calculate Input hash tweak
- * input_hash tweak = H_tag(Inputs, outpoint_L || ser_P(A))  -> reduce mod n
- * @param smallestOutpoint - output of (findSmallestOutpoint)
- * @param summedSenderPubkey
+ * input_hash tweak = H_tag(Inputs, outpoint_L || ser_P(A))
  * @returns the input_hash tweak
+ * @param outpointL36
+ * @param summedSenderPubkey33
  */
 export function calculateInputHashTweak(
-  smallestOutpoint: Uint8Array,
-  summedSenderPubkey: Uint8Array, // A = a_sum·G (compressed 33B)
+  outpointL36: Uint8Array, // 36B = txid(LE 32B) || vout(LE 4B)
+  summedSenderPubkey33: Uint8Array, // ser_P(A): 33B compressed
 ): Uint8Array {
+  // Basic format checks
+  if (outpointL36.length !== 36) {
+    throw new Error('outpoint_L must be 36 bytes (txid||vout LE)');
+  }
+  // Accept only compressed points for ser_P(A)
+  if (
+    !(
+      summedSenderPubkey33.length === 33 &&
+      (summedSenderPubkey33[0] === 0x02 || summedSenderPubkey33[0] === 0x03)
+    )
+  ) {
+    throw new Error('ser_P(A) must be a 33-byte compressed pubkey');
+  }
+
   const ihRaw = taggedHash(
     'BIP0352/Inputs',
-    tools.concat([smallestOutpoint, summedSenderPubkey]),
+    tools.concat([outpointL36, summedSenderPubkey33]),
   );
-  return hashToTweak(ihRaw);
+
+  // BIP-352 rule: must be in [1..n-1]
+  if (!ecc.isPrivate(ihRaw)) {
+    throw new Error('input_hash scalar is 0 or >= n');
+  }
+
+  return ihRaw;
 }
 
 /**
@@ -435,41 +420,37 @@ export function calculateSumA(
  * @returns S
  */
 export function calculateSharedSecret(
-  inputHash: Uint8Array,
-  scanPubkey: Uint8Array,
-  summedSenderPrivkey: Uint8Array, // a_sum (32B)
-): Uint8Array | null {
-  if (!summedSenderPrivkey)
-    throw new Error('summedSenderPrivkey was not provided?');
-  const Si: Uint8Array<ArrayBufferLike> | null = ecc.pointMultiply(
-    scanPubkey!,
-    inputHash,
-    true,
-  );
-  if (!Si) throw new Error('pointMultiply(B_scan, ih) failed');
-  const S: Uint8Array<ArrayBufferLike> | null = ecc.pointMultiply(
-    Si,
-    summedSenderPrivkey,
-    true,
-  );
-  if (!S) throw new Error('pointMultiply(Si, summedSenderPrivkey) failed');
-  else return S;
-}
+  inputHash: Uint8Array, // 32B scalar
+  scanPubkey: Uint8Array, // 33B compressed B_scan
+  summedSenderPrivkey: Uint8Array, // 32B a_sum (even-Y normalized upstream)
+): Uint8Array {
+  if (!ecc.isPrivate(inputHash))
+    throw new Error('input_hash scalar is 0 or >= n');
+  if (!ecc.isPrivate(summedSenderPrivkey)) throw new Error('a_sum invalid');
+  if (!ecc.isPointCompressed(scanPubkey))
+    throw new Error('B_scan must be compressed');
 
+  const Si = ecc.pointMultiply(scanPubkey, inputHash, true);
+  if (Si === null)
+    throw new Error('pointMultiply(B_scan, input_hash) -> infinity');
+
+  const S = ecc.pointMultiply(Si, summedSenderPrivkey, true);
+  if (S === null) throw new Error('pointMultiply(Si, a_sum) -> infinity');
+
+  return S; // 33B compressed ser_P(S)
+}
 /**
  *  Calculate the tweak key
- *  input_hash tweak = H_tag(Inputs, outpoint_L || ser_P(A))  -> reduce mod n
+ *  input_hash tweak = H_tag(Inputs, outpoint_L || ser_P(A))
  * @constructor
  * @param S
  * @param k
  * @returns input_hash tweak
  */
-export function calculateT_k(S: Uint8Array, k: number): Uint8Array | null {
-  const t_k: Uint8Array<ArrayBufferLike> = taggedHash(
-    'BIP0352/SharedSecret',
-    tools.concat([S, ser32BE(k)]),
-  );
-  return hashToTweak(t_k);
+export function calculateT_k(S: Uint8Array, k: number): Uint8Array {
+  const t_k = taggedHash('BIP0352/SharedSecret', tools.concat([S, ser32BE(k)]));
+  if (!ecc.isPrivate(t_k)) throw new Error('shared-secret scalar is 0 or >= n');
+  return t_k;
 }
 
 /**
@@ -504,7 +485,7 @@ export function deriveOutput(
   spendPubkey: Uint8Array,
   k: number,
 ): { pub_key: Uint8Array; tweak_key: Uint8Array } {
-  // t_k = H_tag(SharedSecret, ser_P(S) || ser32BE(k))  -> reduce mod n
+  // t_k = H_tag(SharedSecret, ser_P(S) || ser32BE(k))
   const t_k: Uint8Array<ArrayBufferLike> | null = calculateT_k(S, k);
   if (!t_k) throw new Error('t_k: failed');
 
@@ -523,14 +504,18 @@ export function deriveOutput(
  * @return tweaked label hash
  */
 export function createLabelTweak(
-  receiverScanPrivkey: Uint8Array, // b_scan (32B)
-  m: number, // label integer
+  receiverScanPrivkey: Uint8Array,
+  m: number,
 ): Uint8Array {
+  // normalize m to uint32 per BIP
+  if (!Number.isInteger(m) || m < 0) throw new Error('label m must be uint32');
+  const m32 = m >>> 0;
   const raw = taggedHash(
     'BIP0352/Label',
-    tools.concat([receiverScanPrivkey, ser32BE(m)]),
+    tools.concat([receiverScanPrivkey, ser32BE(m32)]),
   );
-  return hashToTweak(raw);
+  if (!ecc.isPrivate(raw)) throw new Error('label scalar is 0 or >= n');
+  return raw;
 }
 
 /**
