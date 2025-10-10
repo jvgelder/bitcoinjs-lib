@@ -271,13 +271,11 @@ function runSenderCase(tc: Sender) {
 
   // Early exit (no usable inputs)
   if (inputPrivKeyTuples.length === 0) {
-    const sending_outputs: string[] = [];
     assert(
       expected.outputs &&
         expected.outputs[0] &&
         expected.outputs[0].length === 0 &&
-        sending_outputs.length === 0,
-      'Sending test failed (no inputs case)',
+        'Sending test failed (no inputs case)',
     );
     return;
   }
@@ -365,7 +363,6 @@ function runReceiverCase(tc: Recipient) {
   // -------- key material --------
   const b_scan = fromHex(given.key_material.scan_priv_key);
   const b_spend = fromHex(given.key_material.spend_priv_key);
-  const B_spend = ecc.pointFromScalar(b_spend, true) as Uint8Array;
 
   // -------- outpoint_L --------
   const vinArray = given.vin.map(
@@ -502,7 +499,7 @@ describe('BIP-352 Silent Payments — sender vectors', () => {
 });
 
 describe('BIP-352 Silent Payments — receiver vectors', () => {
-  const groups : TestCase[]= fixtures;
+  const groups: TestCase[] = fixtures;
   let count = 0;
   for (const g of groups) {
     if (!g?.receiving) continue;
