@@ -9,7 +9,7 @@ import { bech32m } from 'bech32';
 import { Payment, PaymentOpts } from './index';
 import * as lazy from './lazy';
 import { taggedHash } from '../crypto';
-import { Input, Output } from '../transaction';
+import { Input } from '../transaction';
 
 // --- TYPE DEFINITIONS & UTILITIES ---
 export const BECH32_SP_LIMIT = 150;
