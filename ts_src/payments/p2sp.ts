@@ -89,7 +89,7 @@ export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
     const allRecipientsComplete = a.recipients.every(
       r => r.S.length > 0 && r.B_spend_pub.length > 0,
     );
-    const allRecipientsHaveBSpend = a.recipients.every(
+    const allRecipientsHaveB_spend = a.recipients.every(
       r => r.B_spend_pub.length > 0,
     );
     // If we have both the secret and B_spend for each key we can derive directly
@@ -105,7 +105,7 @@ export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
       a.aSum != null &&
       a.aSum?.length > 0 &&
       a.recipients?.length > 0 &&
-      allRecipientsHaveBSpend
+      allRecipientsHaveB_spend
     ) {
       const A: Uint8Array = ecc.pointFromScalar(a.aSum, true); // compressed 33B
       const inputHashTweak: Uint8Array = calculateInputHashTweak(
@@ -261,16 +261,16 @@ export function decodeSilentPaymentAddress(address: string): {
       // Handle both current (64 bytes for x-only keys) and legacy (66 bytes for full keys) payload lengths.
       if (keysData.length === 64) {
         // Current spec: 32-byte x-only keys. Reconstruct with even y-parity (0x02) as per convention.
-        const B_scan_xonly = keysData.slice(0, 32);
-        const B_spend_xonly = keysData.slice(32, 64);
+        const B_scan_xOnly = keysData.slice(0, 32);
+        const B_spend_xOnly = keysData.slice(32, 64);
 
         B_spend = new Uint8Array(33);
         B_spend[0] = 0x02;
-        B_spend.set(B_spend_xonly, 1);
+        B_spend.set(B_spend_xOnly, 1);
 
         B_scan = new Uint8Array(33);
         B_scan[0] = 0x02;
-        B_scan.set(B_scan_xonly, 1);
+        B_scan.set(B_scan_xOnly, 1);
       } else if (keysData.length === 66) {
         // Legacy spec: 33-byte full keys. We can return them directly to preserve the original y-parity.
         B_scan = keysData.slice(0, 33);
@@ -371,17 +371,17 @@ export function calculateSumA(
  *  S = (inputHash * B_scan) * a_sum   (compressed)
  * @param inputHash
  * @param scanPubkey - B_scan
- * @param summedSenderPrivkey - a_Sum
+ * @param summedSenderPrivKey - a_Sum
  * @returns S
  */
 export function calculateSharedSecret(
   inputHash: Uint8Array, // 32B scalar
   scanPubkey: Uint8Array, // 33B compressed B_scan
-  summedSenderPrivkey: Uint8Array, // 32B a_sum (even-Y normalized upstream)
+  summedSenderPrivKey: Uint8Array, // 32B a_sum (even-Y normalized upstream)
 ): Uint8Array {
   if (!ecc.isPrivate(inputHash))
     throw new Error('input_hash scalar is 0 or >= n');
-  if (!ecc.isPrivate(summedSenderPrivkey)) throw new Error('a_sum invalid');
+  if (!ecc.isPrivate(summedSenderPrivKey)) throw new Error('a_sum invalid');
   if (!ecc.isPointCompressed(scanPubkey))
     throw new Error('B_scan must be compressed');
 
@@ -389,7 +389,7 @@ export function calculateSharedSecret(
   if (Si === null)
     throw new Error('pointMultiply(B_scan, input_hash) -> infinity');
 
-  const S = ecc.pointMultiply(Si, summedSenderPrivkey, true);
+  const S = ecc.pointMultiply(Si, summedSenderPrivKey, true);
   if (S === null) throw new Error('pointMultiply(Si, a_sum) -> infinity');
 
   return S; // 33B compressed ser_P(S)
