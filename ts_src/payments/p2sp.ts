@@ -345,7 +345,7 @@ export function calculateSumA(
 
     // only normalize when key will be used as x-only (Taproot key-spend).
     if (isXOnly) {
-      const P: Uint8Array<ArrayBufferLike> | null = ecc.pointFromScalar(
+      const P: Uint8Array | null = ecc.pointFromScalar(
         k,
         true,
       );
@@ -419,7 +419,7 @@ export function calculateP_k(
   spendPubKey: Uint8Array,
   t_k: Uint8Array,
 ): Uint8Array {
-  const Pk: Uint8Array<ArrayBufferLike> | null = ecc.pointAddScalar(
+  const Pk: Uint8Array | null = ecc.pointAddScalar(
     spendPubKey,
     t_k,
     true,
@@ -441,12 +441,12 @@ export function deriveOutput(
   k: number,
 ): { pub_key: Uint8Array; tweak_key: Uint8Array } {
   // t_k = H_tag(SharedSecret, ser_P(S) || ser32BE(k))
-  const t_k: Uint8Array<ArrayBufferLike> | null = calculateT_k(S, k);
+  const t_k: Uint8Array | null = calculateT_k(S, k);
   if (!t_k) throw new Error('t_k: failed');
 
   // P_k = B_spend + t_k·G (compressed) -> x-only for P2TR
-  const P_k: Uint8Array<ArrayBufferLike> = calculateP_k(spendPubkey, t_k);
-  const P_xOnly: Uint8Array<ArrayBufferLike> = toXOnly(P_k);
+  const P_k: Uint8Array = calculateP_k(spendPubkey, t_k);
+  const P_xOnly: Uint8Array = toXOnly(P_k);
   if (!P_xOnly) throw new Error('pointAddScalar failed');
 
   return { pub_key: P_xOnly, tweak_key: t_k };
@@ -487,9 +487,9 @@ export function generateLabelAndAddress(
   label: number,
 ): { L: Uint8Array; Bm: Uint8Array } {
   // TaggedHash("BIP0352/Label", ser256(b_scan) || ser32BE(m))
-  const L: Uint8Array<ArrayBufferLike> = createLabelTweak(B_scan, label);
+  const L: Uint8Array = createLabelTweak(B_scan, label);
   // Bm = B_spend + hashBIP0352/Label(ser256(b_scan) || ser32(m))·G
-  const Bm: Uint8Array<ArrayBufferLike> | null = ecc.pointAddScalar(
+  const Bm: Uint8Array | null = ecc.pointAddScalar(
     B_spend,
     L,
     true,
@@ -587,7 +587,7 @@ function performScan(
       // priv_key_tweak returned by L + t_k (mod n) for labeled, or t_k for unlabeled
       let spendTweak = derivedOutput.tweak_key;
       if (labelScalar != null && !isZero32(labelScalar)) {
-        const sum: Uint8Array<ArrayBufferLike> | null = ecc.privateAdd(
+        const sum: Uint8Array | null = ecc.privateAdd(
           labelScalar,
           derivedOutput.tweak_key,
         );
