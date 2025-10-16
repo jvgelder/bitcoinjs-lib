@@ -338,7 +338,7 @@ export function calculateInputHashTweak(
     throw new Error('ser_P(A) must be a 33-byte compressed pubkey');
   }
 
-  const ihRaw = taggedHash(
+  const ihRaw: Uint8Array = taggedHash(
     'BIP0352/Inputs',
     tools.concat([outpointL36, summedSenderPubkey33]),
   );
@@ -366,7 +366,7 @@ export function calculateSumA(
   for (const { priv, isXOnly } of inputPrivKeyTuples) {
     if (!ecc.isPrivate(priv)) continue;
 
-    let k = priv;
+    let k: Uint8Array = priv;
 
     // only normalize when key will be used as x-only (Taproot key-spend).
     if (isXOnly) {
