@@ -45,7 +45,7 @@ interface SilentOutput {
  *
  * @property {Uint8Array} [spendPubkey] - Optional spend public key for the sender.
  * @property {Uint8Array} [scanPubkey] - Optional scan public key used for recipient address derivation.
- * @property {SilentOutput[]} [outputs] - Optional array of outputs generated for use in the transaction.
+ * @property {SilentOutput[]} [silentOutputs] - Optional array of silentOutputs generated for use in the transaction.
  * @property {number} [version] - Optional version number of the silent payment scheme.
  * @property {Uint8Array} [aSum] - Optional summed private key (see `calculateSumA`).
  * @property {Uint8Array} [outpointL] - Optional first result of lexicographically sorted input transaction IDs.
@@ -56,7 +56,7 @@ interface SilentOutput {
 export interface SilentPayment extends Payment {
   spendPubkey?: Uint8Array;
   scanPubkey?: Uint8Array;
-  outputs?: SilentOutput[];
+  silentOutputs?: SilentOutput[];
   version?: number;
   aSum?: Uint8Array;
   outpointL?: Uint8Array;
@@ -100,8 +100,8 @@ export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
       network,
     );
   });
-  lazy.prop(o, 'outputs', () => {
-    if (a.outputs) return a.outputs;
+  lazy.prop(o, 'silentOutputs', () => {
+    if (a.silentOutputs) return a.silentOutputs;
     const allRecipientsComplete = a.recipients.every(
       r => r.S.length > 0 && r.B_spend_pub.length > 0,
     );
