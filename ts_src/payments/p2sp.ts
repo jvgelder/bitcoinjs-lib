@@ -68,8 +68,8 @@ export interface SilentPayment extends Payment {
  * Main function for creating a Pay-to-Silent-Payment (P2SP) payment object.
  * This function encapsulates the logic for handling silent payment addresses and keys.
  *
- * @param a - The payment object containing the necessary data for P2SP.
- * @param opts - Optional payment options.
+ * @param {SilentPayment} [a] - The payment object containing the necessary data for P2SP.
+ * @param {PaymentOpts} [opts] - Optional payment options.
  * @returns The P2SP payment object.
  */
 export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
@@ -205,9 +205,9 @@ export const serOutpointLE = (txidHexBE: Uint8Array, vout: number) => {
 
 /**
  * Encodes spend and scan public keys into a Bech32m Silent Payment address.
- * @param B_spend
- * @param B_scan
- * @param version
+ * @param {Uint8Array} [B_spend] - spend public key.
+ * @param {Uint8Array} [B_scan] - public scan key.
+ * @param {number} [version] - Optional version number of the silent payment scheme.
  * @param network - testing, regtest or prod
  * @returns bech32m encoded string
  */
@@ -427,7 +427,7 @@ export function calculateT_k(S: Uint8Array, k: number): Uint8Array {
 /**
  *  Calculate P_k
  *  P_k = B_spend + t_k·G (compressed) -> x-only for P2TR
- * @param spendPubKey
+ * @param spendPubKey - B_spend
  * @param t_k
  * @returns Pk
  */
