@@ -9,7 +9,7 @@ import {
   calculateInputHashTweak,
   calculateSharedSecret,
   calculateSumA,
-  deriveOutput,
+  deriveSilentOutput,
   decodeSilentPaymentAddress,
   encodeSilentPaymentAddress,
   findSmallestOutpoint,
@@ -339,7 +339,7 @@ function runSenderCase(tc: Sender) {
     }
 
     for (let k = 0; k < g.B_m_list.length; k++) {
-      const { pub_key, tweak_key } = deriveOutput(S, g.B_m_list[k], k);
+      const { pub_key, tweak_key } = deriveSilentOutput(S, g.B_m_list[k], k);
       sending_outputs.add(toHex(pub_key)); // x-only hex
     }
   }

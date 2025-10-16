@@ -22,6 +22,22 @@ interface Recipient {
   S?: Uint8Array;
   B_spend_pub?: Uint8Array;
 }
+
+/**
+ * @property {Uint8Array} [pub_key] - Resulting xOnly P_k of {@link calculateP_k}
+ * @property {Uint8Array} [tweak_key] - t_k
+ * @property {Uint8Array} [priv_key_tweak] - labeled t_k when labeled are used else the same as t_k
+ * @property {number} [labelNonce] -
+ * @property {Uint8Array} [labelScalar] - result of TaggedHash("BIP0352/Label", ser256(b_scan) || ser32BE(m)) {@link createLabelTweak}
+ */
+interface SilentOutput {
+  pub_key: Uint8Array;
+  tweak_key: Uint8Array;
+  priv_key_tweak?: Uint8Array;
+  labelNonce?: number;
+  labelScalar?: Uint8Array;
+}
+
 /**
  * Represents a Silent Payment transaction structure that extends a standard {@link Payment}.
  * Includes additional cryptographic and metadata fields used for constructing
@@ -29,7 +45,7 @@ interface Recipient {
  *
  * @property {Uint8Array} [spendPubkey] - Optional spend public key for the sender.
  * @property {Uint8Array} [scanPubkey] - Optional scan public key used for recipient address derivation.
- * @property {Output[]} [outputs] - Optional array of outputs generated in the transaction.
+ * @property {SilentOutput[]} [outputs] - Optional array of outputs generated for use in the transaction.
  * @property {number} [version] - Optional version number of the silent payment scheme.
  * @property {Uint8Array} [aSum] - Optional summed private key (see `calculateSumA`).
  * @property {Uint8Array} [outpointL] - Optional first result of lexicographically sorted input transaction IDs.
@@ -40,7 +56,7 @@ interface Recipient {
 export interface SilentPayment extends Payment {
   spendPubkey?: Uint8Array;
   scanPubkey?: Uint8Array;
-  outputs?: Output[];
+  outputs?: SilentOutput[];
   version?: number;
   aSum?: Uint8Array;
   outpointL?: Uint8Array;
@@ -95,7 +111,7 @@ export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
     // If we have both the secret and B_spend for each key we can derive directly
     if (allRecipientsComplete) {
       return a.recipients?.map((value, index) => {
-        deriveOutput(value.S, value.B_spend_pub, index);
+        deriveSilentOutput(value.S, value.B_spend_pub, index);
       });
     }
     // If we have outpointL, aSum and only the spend keys for the recipients we need to calculate the input hash and secret
@@ -433,13 +449,13 @@ export function calculateP_k(
  * @param S - shared secret = (inputHash * B_scan) * a_sum   (compressed)
  * @param spendPubkey - B_spend
  * @param k - output number
- * @returns the newly calculated output
+ * @returns {SilentOutput} the newly calculated output
  */
-export function deriveOutput(
+export function deriveSilentOutput(
   S: Uint8Array,
   spendPubkey: Uint8Array,
   k: number,
-): { pub_key: Uint8Array; tweak_key: Uint8Array } {
+): SilentOutput {
   // t_k = H_tag(SharedSecret, ser_P(S) || ser32BE(k))
   const t_k: Uint8Array | null = calculateT_k(S, k);
   if (!t_k) throw new Error('t_k: failed');
@@ -514,16 +530,8 @@ export function scanForSilentPayments(
   summedSenderPubkey: Uint8Array,
   outputsToCheck: Set<string>,
   labelNonces: Array<number> = Array.from([]),
-): {
-  priv_key_tweak: Uint8Array;
-  pub_key: Uint8Array;
-  labelNonce?: number;
-}[] {
-  let foundPayments: {
-    priv_key_tweak: Uint8Array;
-    pub_key: Uint8Array;
-    labelNonce?: number;
-  }[] = [];
+): SilentOutput[] {
+  let foundPayments: SilentOutput[] = [];
 
   // G
   const baseSpendPubkey: Uint8Array = ecc.pointFromScalar(
@@ -575,11 +583,11 @@ function performScan(
   S: Uint8Array,
   outputsToCheck: Set<string>,
   labelScalar: Uint8Array | null, // L (or null for base)
-): { priv_key_tweak: Uint8Array; pub_key: Uint8Array }[] {
-  const found: { priv_key_tweak: Uint8Array; pub_key: Uint8Array }[] = [];
+): SilentOutput[] {
+  const found: SilentOutput[] = [];
 
   for (let k = 0; k < outputsToCheck.size; k++) {
-    const derivedOutput = deriveOutput(S, receiverSpendPubkey, k);
+    const derivedOutput = deriveSilentOutput(S, receiverSpendPubkey, k);
     if (!derivedOutput.pub_key) break;
     const xonlyHex = toHex(derivedOutput.pub_key).toLowerCase();
 
@@ -594,10 +602,10 @@ function performScan(
         if (!sum) throw new Error('privateAdd(label, t_k) failed');
         spendTweak = sum;
       }
-      // TODO chose to return the hex encoded or raw Uint8Array
       found.push({
+        ...derivedOutput,
         priv_key_tweak: spendTweak,
-        pub_key: derivedOutput.pub_key,
+        labelScalar,
       });
     }
   }

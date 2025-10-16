@@ -24,7 +24,7 @@ import { p2sh } from './p2sh.js';
 import { p2wpkh } from './p2wpkh.js';
 import { p2wsh } from './p2wsh.js';
 import { p2tr } from './p2tr.js';
-import { p2sp, scanForSilentPayments, deriveOutput } from './p2sp.js';
+import { p2sp, scanForSilentPayments, deriveSilentOutput } from './p2sp.js';
 
 export interface Payment {
   name?: string;
@@ -72,7 +72,7 @@ export {
   p2sp,
   // TODO how should we expose the two functions below?
   scanForSilentPayments,
-  deriveOutput,
+  deriveSilentOutput,
 };
 
 // TODO
