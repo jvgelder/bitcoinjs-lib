@@ -370,10 +370,7 @@ export function calculateSumA(
 
     // only normalize when key will be used as x-only (Taproot key-spend).
     if (isXOnly) {
-      const P: Uint8Array | null = ecc.pointFromScalar(
-        k,
-        true,
-      );
+      const P: Uint8Array | null = ecc.pointFromScalar(k, true);
       if (!P) continue; // skip invalid
       if (P[0] === 0x03) {
         const neg = ecc.privateNegate(k);
@@ -444,11 +441,7 @@ export function calculateP_k(
   spendPubKey: Uint8Array,
   t_k: Uint8Array,
 ): Uint8Array {
-  const Pk: Uint8Array | null = ecc.pointAddScalar(
-    spendPubKey,
-    t_k,
-    true,
-  );
+  const Pk: Uint8Array | null = ecc.pointAddScalar(spendPubKey, t_k, true);
   if (!Pk) throw new Error('pointAddScalar failed');
   return Pk;
 }
@@ -514,11 +507,7 @@ export function generateLabelAndAddress(
   // TaggedHash("BIP0352/Label", ser256(b_scan) || ser32BE(m))
   const L: Uint8Array = createLabelTweak(B_scan, label);
   // Bm = B_spend + hashBIP0352/Label(ser256(b_scan) || ser32(m))·G
-  const Bm: Uint8Array | null = ecc.pointAddScalar(
-    B_spend,
-    L,
-    true,
-  );
+  const Bm: Uint8Array | null = ecc.pointAddScalar(B_spend, L, true);
   if (!Bm) throw new Error('pointAddScalar(B_spend, L) failed');
   return { L, Bm };
 }
