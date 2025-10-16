@@ -248,15 +248,24 @@ export function encodeSilentPaymentAddress(
 }
 
 /**
- * Decodes a Bech32m Silent payment address into its spend and scan public keys.
- * @param address - bech32m silent payment address format
- * @returns { B_spend, B_scan, version }
+ * @property {Uint8Array} [B_spend] - spend public key.
+ * @property {Uint8Array} [B_scan] - public scan key.
+ * @property {number} [version] - silent payment version
  */
-export function decodeSilentPaymentAddress(address: string): {
+interface DecodedSilentPaymentAddress {
   B_spend: Uint8Array; // pub spend key
   B_scan: Uint8Array; // pub scan key
   version: number;
-} {
+}
+
+/**
+ * Decodes a Bech32m Silent payment address into its spend and scan public keys.
+ * @param address - bech32m silent payment address format
+ * @returns { DecodedSilentPaymentAddress } - Decoded silent payment address
+ */
+export function decodeSilentPaymentAddress(
+  address: string,
+): DecodedSilentPaymentAddress {
   // The default bech32 limit is 90, but silent payment addresses are longer.
   // We pass a higher limit to accommodate this, as the underlying implementation allows it.
   const { prefix, words } = bech32m.decode(address, BECH32_SP_LIMIT);
