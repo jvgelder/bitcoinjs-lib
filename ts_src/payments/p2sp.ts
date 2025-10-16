@@ -61,7 +61,7 @@ export interface SilentPayment extends Payment {
   aSum?: Uint8Array;
   outpointL?: Uint8Array;
   privKeys?: Array<{ priv: Uint8Array; isXOnly: boolean }>;
-  recipients: Array<Recipient>;
+  recipients?: Array<Recipient>;
 }
 
 /**
