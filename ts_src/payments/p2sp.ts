@@ -29,7 +29,6 @@ interface Recipient {
  *
  * @property {Uint8Array} [spendPubkey] - Optional spend public key for the sender.
  * @property {Uint8Array} [scanPubkey] - Optional scan public key used for recipient address derivation.
- * @property {Input[]} [inputs] - Optional array of input UTXOs used in the transaction.
  * @property {Output[]} [outputs] - Optional array of outputs generated in the transaction.
  * @property {number} [version] - Optional version number of the silent payment scheme.
  * @property {Uint8Array} [aSum] - Optional summed private key (see `calculateSumA`).
@@ -41,7 +40,6 @@ interface Recipient {
 export interface SilentPayment extends Payment {
   spendPubkey?: Uint8Array;
   scanPubkey?: Uint8Array;
-  inputs?: Input[];
   outputs?: Output[];
   version?: number;
   aSum?: Uint8Array;
@@ -118,52 +116,9 @@ export function p2sp(a: SilentPayment, opts?: PaymentOpts): SilentPayment {
         const S = calculateSharedSecret(
           inputHashTweak,
           value.B_spend_pub,
-          aSum,
-        );
-        deriveOutput(S, value.B_spend_pub, index);
-      });
-    }
-    // If we have all the inputs, aSum and only the spend keys for the recipients we need to calculate the input hash and secret
-    else if (
-      a.inputs != null &&
-      a.inputs?.length > 0 &&
-      a.aSum != null &&
-      a.aSum?.length > 0 &&
-      a?.recipients.length > 0 &&
-      allRecipientsHaveBSpend
-    ) {
-      const outpointL = findSmallestOutpoint(a.inputs);
-      const A: Uint8Array = ecc.pointFromScalar(a.aSum, true); // compressed 33B
-      const inputHashTweak: Uint8Array = calculateInputHashTweak(outpointL, A);
-      return a?.recipients.map((value, index) => {
-        const S = calculateSharedSecret(
-          inputHashTweak,
-          value.B_spend_pub,
           a.aSum,
         );
-        deriveOutput(S, value.B_spend_pub, index);
-      });
-    }
-    // If we have all the inputs, privKeys and only the spend keys for the recipients we need to calculate the Sum, the input hash and secret
-    else if (
-      a.inputs != null &&
-      a.inputs?.length > 0 &&
-      a.privKeys != null &&
-      a.privKeys?.length > 0 &&
-      a?.recipients.length > 0 &&
-      allRecipientsHaveBSpend
-    ) {
-      const aSum: Uint8Array = calculateSumA(a.privKeys);
-      const outpointL = findSmallestOutpoint(a.inputs);
-      const A: Uint8Array = ecc.pointFromScalar(aSum, true); // compressed 33B
-      const inputHashTweak: Uint8Array = calculateInputHashTweak(outpointL, A);
-      return a?.recipients.map((value, index) => {
-        const S = calculateSharedSecret(
-          inputHashTweak,
-          value.B_spend_pub,
-          aSum,
-        );
-        deriveOutput(S, value.B_spend_pub, index);
+        deriveSilentOutput(S, value.B_spend_pub, index);
       });
     } else throw Error('Not enough data to derive outputs');
   });
