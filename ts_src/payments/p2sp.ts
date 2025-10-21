@@ -2,14 +2,14 @@ import { bitcoin as BITCOIN_NETWORK, Network } from '../networks';
 import * as ecc from 'tiny-secp256k1';
 import { toXOnly } from '../psbt/bip371';
 import * as tools from 'uint8array-tools';
-import { toHex, writeUInt32 } from 'uint8array-tools';
+import { writeUInt32 } from 'uint8array-tools';
 import { bech32m } from 'bech32';
 
 // Explicitly import the Payment type for clarity
 import { Payment, PaymentOpts } from './index';
 import * as lazy from './lazy';
 import { taggedHash } from '../crypto';
-import { Input } from '../transaction';
+import { isZero32 } from '../bufferutils';
 
 // --- TYPE DEFINITIONS & UTILITIES ---
 export const BECH32_SP_LIMIT = 150;
@@ -171,37 +171,6 @@ export function ser32BE(n: number): Uint8Array {
   writeUInt32(b, 0, n >>> 0, 'be');
   return b;
 }
-
-function isZero32(a: Uint8Array) {
-  for (let i = 0; i < 32; i++) if (a[i] !== 0) return false;
-  return true;
-}
-
-/**
- * Smallest outpoint = lexicographic min of (txidLE || voutLE)
- * @param inputs an array of inputs you want the first lexicographically sorted result
- * @returns the first output after sorting lexicographically
- */
-export const findSmallestOutpoint = (inputs: Array<Input>) =>
-  inputs
-    .map(v => serOutpointLE(v.hash, v.index))
-    .sort((a, b) => tools.compare(a, b))[0];
-
-/**
- * Serialize output with number little endian
- * (used to sort outputs)
- * @param txidHexBE - big endian encoded tx
- * @param vout - output index
- * @returns the serialized little endian encoded output
- */
-export const serOutpointLE = (txidHexBE: Uint8Array, vout: number) => {
-  const out = new Uint8Array(36);
-  if (txidHexBE.length !== 32) throw new Error('txid must be 32 bytes');
-  txidHexBE.reverse(); // BE -> LE
-  out.set(txidHexBE, 0);
-  writeUInt32(out, 32, vout >>> 0, 'le');
-  return out;
-};
 
 /**
  * Encodes spend and scan public keys into a Bech32m Silent Payment address.
@@ -510,102 +479,4 @@ export function generateLabelAndAddress(
   const Bm: Uint8Array | null = ecc.pointAddScalar(B_spend, L, true);
   if (!Bm) throw new Error('pointAddScalar(B_spend, L) failed');
   return { L, Bm };
-}
-
-/**
- * Scans a transaction's inputs and outputs to find any silent payments for the receiver.
- * @param receiverScanPrivkey - b_scan
- * @param receiverSpendPrivkey - b_spend
- * @param inputHashTweak
- * @param summedSenderPubkey - A_sum
- * @param outputsToCheck - array of hex xOnly encoded outputs to check
- * @param labelNonces
- */
-export function scanForSilentPayments(
-  receiverScanPrivkey: Uint8Array,
-  receiverSpendPrivkey: Uint8Array,
-  inputHashTweak: Uint8Array,
-  summedSenderPubkey: Uint8Array,
-  outputsToCheck: Set<string>,
-  labelNonces: Array<number> = Array.from([]),
-): SilentOutput[] {
-  let foundPayments: SilentOutput[] = [];
-
-  // G
-  const baseSpendPubkey: Uint8Array = ecc.pointFromScalar(
-    receiverSpendPrivkey,
-    true,
-  )!;
-
-  // Shared secret S = (inputHash * A_sum) * b_scan  (order equivalent)
-  const S = calculateSharedSecret(
-    inputHashTweak,
-    summedSenderPubkey,
-    receiverScanPrivkey,
-  );
-  if (!S) return [];
-
-  // First, scan for the base (unlabeled) address
-  foundPayments = foundPayments.concat(
-    performScan(baseSpendPubkey, S, outputsToCheck, null),
-  );
-
-  // Then, scan for each labeled address
-  for (const m of labelNonces) {
-    const { L, Bm } = generateLabelAndAddress(
-      receiverScanPrivkey,
-      baseSpendPubkey,
-      m,
-    );
-
-    const labeledResults = performScan(Bm, S, outputsToCheck, L);
-
-    // Add the label nonce to any found payments for identification
-    labeledResults.forEach(result => {
-      foundPayments.push({ ...result, labelNonce: m });
-    });
-  }
-
-  return foundPayments;
-}
-
-/**
- * The core scanning logic, performed for a specific spend public key (B_spend).
- * @param receiverSpendPubkey - G or B_m
- * @param S
- * @param outputsToCheck - array of hex xOnly encoded outputs to check
- * @param labelScalar
-= */
-function performScan(
-  receiverSpendPubkey: Uint8Array,
-  S: Uint8Array,
-  outputsToCheck: Set<string>,
-  labelScalar: Uint8Array | null, // L (or null for base)
-): SilentOutput[] {
-  const found: SilentOutput[] = [];
-
-  for (let k = 0; k < outputsToCheck.size; k++) {
-    const derivedOutput = deriveSilentOutput(S, receiverSpendPubkey, k);
-    if (!derivedOutput.pub_key) break;
-    const xonlyHex = toHex(derivedOutput.pub_key).toLowerCase();
-
-    if (outputsToCheck.size === 0 || outputsToCheck.has(xonlyHex)) {
-      // priv_key_tweak returned by L + t_k (mod n) for labeled, or t_k for unlabeled
-      let spendTweak = derivedOutput.tweak_key;
-      if (labelScalar != null && !isZero32(labelScalar)) {
-        const sum: Uint8Array | null = ecc.privateAdd(
-          labelScalar,
-          derivedOutput.tweak_key,
-        );
-        if (!sum) throw new Error('privateAdd(label, t_k) failed');
-        spendTweak = sum;
-      }
-      found.push({
-        ...derivedOutput,
-        priv_key_tweak: spendTweak,
-        labelScalar,
-      });
-    }
-  }
-  return found;
 }

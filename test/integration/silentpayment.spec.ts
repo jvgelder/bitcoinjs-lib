@@ -12,11 +12,12 @@ import {
   deriveSilentOutput,
   decodeSilentPaymentAddress,
   encodeSilentPaymentAddress,
-  findSmallestOutpoint,
-  modN32,
-  scanForSilentPayments,
 } from '../../ts_src/payments/p2sp.js';
 import { Input } from '../../ts_src/transaction.js';
+import {
+  findSmallestOutpoint,
+  scanForSilentPayments,
+} from '../../ts_src/SilentPaymentTransaction.js';
 
 // ---- init ecc for bitcoinjs (even if we use tiny-secp directly) ----
 bitcoin.initEccLib(ecc);

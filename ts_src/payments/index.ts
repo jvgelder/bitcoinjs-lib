@@ -70,8 +70,6 @@ export {
   p2wsh,
   p2tr,
   p2sp,
-  // TODO how should we expose the two functions below?
-  scanForSilentPayments,
   deriveSilentOutput,
 };
 
